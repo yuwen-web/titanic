@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Titanic 乘客資料管理</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 30px; }
+        nav a { margin-right: 12px; }
+        table { border-collapse: collapse; width: 100%; margin-top: 20px; }
+        th, td { border: 1px solid #ccc; padding: 8px; font-size: 14px; }
+        th { background-color: #f2f2f2; }
+        .toolbar { margin-bottom: 20px; }
+        .toolbar input, .toolbar button { padding: 6px; margin-right: 6px; }
+        a { text-decoration: none; color: blue; }
+        .pagination { margin-top: 20px; }
+    </style>
+</head>
+
+<body>
+    <nav>
+        <a href="/">乘客資料 (CRUD)</a>
+        <a href="/train">模型訓練</a>
+        <a href="/predict">預測</a>
+    </nav>
+
+    <h1>Titanic 乘客資料管理</h1>
+
+    <div class="toolbar">
+        <a href="/passengers/new">新增乘客</a>
+        <br><br>
+        <input type="text" id="searchInput" placeholder="搜尋姓名">
+        <button onclick="loadPassengers(1)">查詢</button>
+    </div>
+
+    <div id="summary"></div>
+
+    <table>
+        <thead>
+            <tr>
+                <th>ID</th><th>姓名</th><th>性別</th><th>年齡</th><th>艙等</th>
+                <th>是否生還</th><th>票價</th><th>登船港口</th><th>操作</th>
+            </tr>
+        </thead>
+        <tbody id="passengerTableBody"></tbody>
+    </table>
+
+    <div class="pagination">
+        <button onclick="prevPage()">上一頁</button>
+        <span id="pageInfo"></span>
+        <button onclick="nextPage()">下一頁</button>
+    </div>
+
+    <script>
+        let currentPage = 1;
+        const perPage = 20;
+        let total = 0;
+
+        async function loadPassengers(page = 1) {
+            currentPage = page;
+            const search = document.getElementById("searchInput").value;
+
+            const params = new URLSearchParams({
+                page: currentPage, per_page: perPage, search: search
+            });
+
+            const response = await fetch(`/api/passengers?${params.toString()}`);
+            if (!response.ok) {
+                alert("讀取資料失敗");
+                return;
+            }
+
+            const data = await response.json();
+            total = data.total;
+            renderTable(data.items);
+            renderPagination(data.page, data.per_page, data.total);
+        }
+
+        function renderTable(items) {
+            const tbody = document.getElementById("passengerTableBody");
+            tbody.innerHTML = "";
+            for (const item of items) {
+                const tr = document.createElement("tr");
+                tr.innerHTML = `
+                    <td>${item.PassengerId}</td>
+                    <td>${item.Name}</td>
+                    <td>${item.Sex}</td>
+                    <td>${item.Age ?? ""}</td>
+                    <td>${item.Pclass}</td>
+                    <td>${item.Survived === 1 ? "生還" : "未生還"}</td>
+                    <td>${item.Fare}</td>
+                    <td>${item.Embarked ?? ""}</td>
+                    <td>
+                        <a href="/passengers/${item.PassengerId}/edit">編輯</a>
+                        |
+                        <button onclick="deletePassenger(${item.PassengerId})">刪除</button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            }
+        }
+
+        function renderPagination(page, perPage, total) {
+            const totalPages = Math.ceil(total / perPage);
+            document.getElementById("summary").textContent = `共有 ${total} 筆資料`;
+            document.getElementById("pageInfo").textContent = `第 ${page} 頁 / 共 ${totalPages} 頁`;
+        }
+
+        function prevPage() {
+            if (currentPage > 1) loadPassengers(currentPage - 1);
+        }
+
+        function nextPage() {
+            const totalPages = Math.ceil(total / perPage);
+            if (currentPage < totalPages) loadPassengers(currentPage + 1);
+        }
+
+        async function deletePassenger(passengerId) {
+            const confirmed = confirm(`確定要刪除 PassengerId=${passengerId} 嗎？`);
+            if (!confirmed) return;
+
+            const response = await fetch(`/api/passengers/${passengerId}`, { method: "DELETE" });
+            const result = await response.json();
+
+            if (!response.ok) {
+                alert(result.error || "刪除失敗");
+                return;
+            }
+            alert("刪除成功");
+            loadPassengers(currentPage);
+        }
+
+        loadPassengers();
+    </script>
+</body>
+
+</html>

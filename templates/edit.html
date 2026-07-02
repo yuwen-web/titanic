@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+
+<head>
+    <meta charset="UTF-8">
+    <title>編輯乘客</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 30px;
+        }
+
+        label {
+            display: block;
+            margin-top: 10px;
+        }
+
+        input,
+        select {
+            padding: 6px;
+            width: 300px;
+        }
+
+        button {
+            margin-top: 20px;
+            padding: 8px 16px;
+        }
+    </style>
+</head>
+
+<body>
+    <nav style="margin-bottom:16px;">
+        <a href="/">乘客資料 (CRUD)</a>
+        <a href="/train" style="margin-left:12px;">模型訓練</a>
+        <a href="/predict" style="margin-left:12px;">預測</a>
+    </nav>
+    <h1>編輯乘客</h1>
+
+    <form id="passengerForm">
+        <label>PassengerId</label>
+        <input name="PassengerId" disabled>
+
+        <label>Survived</label>
+        <select name="Survived" required>
+            <option value="0">0：未生還</option>
+            <option value="1">1：生還</option>
+        </select>
+
+        <label>Pclass</label>
+        <select name="Pclass" required>
+            <option value="1">1 等艙</option>
+            <option value="2">2 等艙</option>
+            <option value="3">3 等艙</option>
+        </select>
+
+        <label>Name</label>
+        <input name="Name" required>
+
+        <label>Sex</label>
+        <select name="Sex" required>
+            <option value="male">male</option>
+            <option value="female">female</option>
+        </select>
+
+        <label>Age</label>
+        <input name="Age" type="number" step="0.01">
+
+        <label>SibSp</label>
+        <input name="SibSp" type="number" min="0" required>
+
+        <label>Parch</label>
+        <input name="Parch" type="number" min="0" required>
+
+        <label>Ticket</label>
+        <input name="Ticket" required>
+
+        <label>Fare</label>
+        <input name="Fare" type="number" step="0.0001" min="0" required>
+
+        <label>Cabin</label>
+        <input name="Cabin">
+
+        <label>Embarked</label>
+        <select name="Embarked">
+            <option value="">未知</option>
+            <option value="C">C</option>
+            <option value="Q">Q</option>
+            <option value="S">S</option>
+        </select>
+
+        <button type="submit">更新</button>
+        <a href="/">回首頁</a>
+    </form>
+
+    <script>
+        // 從模板變數中取得 passenger_id，這個變數是在 Flask 的 view function 中傳遞給模板的。
+        const passengerId = {{ passenger_id }};
+
+        // 取得指定 passengerId 的乘客資料。
+        async function loadPassenger() {
+            // 請求取得乘客資料
+            const response = await fetch(`/api/passengers/${passengerId}`);
+
+            // 找不到乘客，就顯示錯誤訊息，然後回到首頁
+            if (!response.ok) {
+                alert("找不到指定乘客");
+                window.location.href = "/";
+                return;
+            }
+
+            // 取得回應的 JSON 格式資料，存到 result 變數中
+            const result = await response.json();
+
+            // 取得 form 元素
+            const form = document.getElementById("passengerForm");
+
+            // 把 result.item 中的屬性值填入對應的表單欄位中
+            for (const key of Object.keys(result.item)) {
+                if (form.elements[key]) {
+                    // 下面的「??」是指如果 result.item[key] 是 null 或 undefined，
+                    // 就使用空字串 ""，這樣表單就不會顯示 null 或 undefined
+                    form.elements[key].value = result.item[key] ?? "";
+                }
+            }
+        }
+
+        // 為 passengerForm 表單綁定 submit 事件的監聽器，當表單被提交時，會觸發這個事件處理函式。
+        document.getElementById("passengerForm").addEventListener("submit", async function (event) {
+            // 阻止表單的預設提交行為
+            event.preventDefault();
+
+            // 取得表單元素，並使用 FormData 物件來收集表單資料
+            const form = event.target;
+            const formData = new FormData(form);
+
+            // 將 FormData 物件轉換成一般的 JavaScript 物件，
+            // 這樣我們就可以把它轉成 JSON 格式
+            const data = Object.fromEntries(formData.entries());
+
+            // 請求更新乘客資料
+            const response = await fetch(`/api/passengers/${passengerId}`, {
+                method: "PUT",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify(data)
+            });
+
+            // 取得回應
+            const result = await response.json();
+
+            // 如果更新失敗，會取得 error 屬性，顯示錯誤訊息給使用者
+            if (!response.ok) {
+                alert(result.error);
+                return;
+            }
+
+            alert("更新成功");
+
+            // 更新成功後，回到首頁
+            window.location.href = "/";
+        });
+
+        loadPassenger();
+    </script>
+</body>
+
+</html>

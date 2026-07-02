@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+
+<head>
+    <meta charset="UTF-8">
+    <title>模型訓練</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 30px; }
+        nav a { margin-right: 12px; }
+        button { padding: 8px 16px; margin-top: 10px; }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+        .card { border: 1px solid #ccc; padding: 16px; margin-top: 20px; max-width: 640px; border-radius: 6px; }
+        .badge { display: inline-block; padding: 3px 10px; border-radius: 12px; color: #fff; font-size: 13px; }
+        .idle { background: #888; }
+        .training { background: #e69500; }
+        .done { background: #2e8b57; }
+        .error { background: #c0392b; }
+        table { border-collapse: collapse; margin-top: 12px; }
+        th, td { border: 1px solid #ccc; padding: 6px 12px; font-size: 14px; text-align: left; }
+        th { background: #f2f2f2; }
+        .metrics span { display: inline-block; margin-right: 24px; }
+        .metrics b { font-size: 20px; }
+    </style>
+</head>
+
+<body>
+    <nav>
+        <a href="/">乘客資料 (CRUD)</a>
+        <a href="/train">模型訓練</a>
+        <a href="/predict">預測</a>
+    </nav>
+
+    <h1>模型訓練</h1>
+    <p>按下按鈕後，系統會讀取 titanic 資料表，用 RandomForest + GridSearchCV 搜尋最佳超參數，
+       訓練完成後自動把模型存成 <code>titanic_model.pkl</code>。</p>
+
+    <button id="trainBtn" onclick="startTraining()">開始訓練</button>
+
+    <div class="card">
+        <div>
+            目前狀態：<span id="stateBadge" class="badge idle">尚未開始</span>
+        </div>
+        <div id="message" style="margin-top: 10px; color: #555;">尚未開始訓練</div>
+
+        <!-- 訓練完成後才顯示的結果區塊 -->
+        <div id="result" style="display: none;">
+            <div class="metrics" style="margin-top: 16px;">
+                <span>交叉驗證 AUC<br><b id="cvScore">-</b></span>
+                <span>測試準確率<br><b id="testAcc">-</b></span>
+                <span>測試 AUC<br><b id="testAuc">-</b></span>
+            </div>
+
+            <h3 style="margin-top: 20px;">最佳超參數</h3>
+            <table id="paramTable">
+                <thead><tr><th>超參數</th><th>最佳值</th></tr></thead>
+                <tbody></tbody>
+            </table>
+            <p style="margin-top: 10px;">
+                訓練筆數：<span id="nSamples">-</span>　
+                <a href="/predict">→ 前往預測頁</a>
+            </p>
+        </div>
+    </div>
+
+    <script>
+        let pollTimer = null;
+
+        // 依狀態更新畫面
+        function render(payload) {
+            const s = payload.status;
+            const badge = document.getElementById("stateBadge");
+            const map = {
+                idle:     ["idle", "尚未開始"],
+                training: ["training", "訓練中"],
+                done:     ["done", "訓練完成"],
+                error:    ["error", "發生錯誤"]
+            };
+            const [cls, label] = map[s.state] || map.idle;
+            badge.className = "badge " + cls;
+            badge.textContent = label;
+            document.getElementById("message").textContent = s.message;
+
+            // 訓練中就把按鈕鎖住
+            document.getElementById("trainBtn").disabled = (s.state === "training");
+
+            if (s.state === "done") {
+                document.getElementById("result").style.display = "block";
+                document.getElementById("cvScore").textContent = s.cv_score;
+                document.getElementById("testAcc").textContent = s.test_accuracy;
+                document.getElementById("testAuc").textContent = s.test_auc;
+                document.getElementById("nSamples").textContent = s.n_samples;
+
+                // 填最佳超參數表格
+                const tbody = document.querySelector("#paramTable tbody");
+                tbody.innerHTML = "";
+                for (const [k, v] of Object.entries(s.best_params || {})) {
+                    const tr = document.createElement("tr");
+                    tr.innerHTML = `<td>${k}</td><td>${v === null ? "None" : v}</td>`;
+                    tbody.appendChild(tr);
+                }
+            }
+        }
+
+        // 按下開始訓練
+        async function startTraining() {
+            const response = await fetch("/api/train", { method: "POST" });
+            const payload = await response.json();
+            render(payload.status ? payload : { status: payload.status });
+            startPolling();
+        }
+
+        // 每 1.5 秒輪詢一次狀態，直到 done 或 error 才停
+        function startPolling() {
+            if (pollTimer) clearInterval(pollTimer);
+            pollTimer = setInterval(async () => {
+                const response = await fetch("/api/train/status");
+                const payload = await response.json();
+                render(payload);
+                if (payload.status.state === "done" || payload.status.state === "error") {
+                    clearInterval(pollTimer);
+                    pollTimer = null;
+                }
+            }, 1500);
+        }
+
+        // 頁面一載入就先問一次狀態（例如之前已經訓練過，直接顯示結果）
+        (async function init() {
+            const response = await fetch("/api/train/status");
+            const payload = await response.json();
+            render(payload);
+            if (payload.status.state === "training") startPolling();
+        })();
+    </script>
+</body>
+
+</html>

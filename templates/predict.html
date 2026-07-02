@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+
+<head>
+    <meta charset="UTF-8">
+    <title>存活預測</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 30px; }
+        nav a { margin-right: 12px; }
+        label { display: block; margin-top: 10px; }
+        input, select { padding: 6px; width: 280px; }
+        button { margin-top: 16px; padding: 8px 16px; }
+        .section { border: 1px solid #ccc; padding: 16px; margin-top: 20px; max-width: 640px; border-radius: 6px; }
+        .result { margin-top: 16px; padding: 12px; border-radius: 6px; font-size: 16px; }
+        .survived { background: #e6f5ec; border: 1px solid #2e8b57; }
+        .died { background: #fdecea; border: 1px solid #c0392b; }
+        .bar-wrap { background: #eee; border-radius: 4px; height: 18px; margin-top: 8px; width: 100%; }
+        .bar { background: #2e8b57; height: 18px; border-radius: 4px; }
+        table { border-collapse: collapse; margin-top: 12px; width: 100%; }
+        th, td { border: 1px solid #ccc; padding: 6px 8px; font-size: 13px; text-align: left; }
+        th { background: #f2f2f2; }
+    </style>
+</head>
+
+<body>
+    <nav>
+        <a href="/">乘客資料 (CRUD)</a>
+        <a href="/train">模型訓練</a>
+        <a href="/predict">預測</a>
+    </nav>
+
+    <h1>存活預測</h1>
+    <p>用訓練好的模型，預測一位乘客是否生還與生還機率。<b>使用前請先到訓練頁完成訓練。</b></p>
+
+    <!-- ========== 單筆預測 ========== -->
+    <div class="section">
+        <h2>單筆預測</h2>
+        <form id="singleForm">
+            <label>Pclass 艙等</label>
+            <select name="Pclass">
+                <option value="1">1 等艙</option>
+                <option value="2">2 等艙</option>
+                <option value="3" selected>3 等艙</option>
+            </select>
+
+            <label>Sex 性別</label>
+            <select name="Sex">
+                <option value="male">male</option>
+                <option value="female">female</option>
+            </select>
+
+            <label>Age 年齡</label>
+            <input name="Age" type="number" step="0.01" value="30">
+
+            <label>SibSp 同行手足/配偶數</label>
+            <input name="SibSp" type="number" min="0" value="0">
+
+            <label>Parch 同行父母/子女數</label>
+            <input name="Parch" type="number" min="0" value="0">
+
+            <label>Fare 票價</label>
+            <input name="Fare" type="number" step="0.0001" min="0" value="8">
+
+            <label>Embarked 登船港口</label>
+            <select name="Embarked">
+                <option value="S" selected>S</option>
+                <option value="C">C</option>
+                <option value="Q">Q</option>
+            </select>
+
+            <button type="submit">預測</button>
+        </form>
+
+        <div id="singleResult" class="result" style="display:none;"></div>
+    </div>
+
+    <!-- ========== 批次預測 ========== -->
+    <div class="section">
+        <h2>批次預測（上傳 CSV）</h2>
+        <p>CSV 需包含欄位：Pclass, Sex, Age, SibSp, Parch, Fare, Embarked
+           （可直接用 titanic.csv，多餘欄位會被忽略）。</p>
+        <input type="file" id="csvFile" accept=".csv">
+        <button onclick="uploadCsv()">上傳並預測</button>
+
+        <div id="batchInfo" style="margin-top:12px;"></div>
+        <div id="batchResult"></div>
+    </div>
+
+    <script>
+        // ---------- 單筆預測 ----------
+        document.getElementById("singleForm").addEventListener("submit", async function (event) {
+            event.preventDefault();
+            const data = Object.fromEntries(new FormData(event.target).entries());
+
+            const response = await fetch("/api/predict", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(data)
+            });
+            const result = await response.json();
+
+            const box = document.getElementById("singleResult");
+            box.style.display = "block";
+
+            if (!response.ok) {
+                box.className = "result died";
+                box.textContent = result.error;
+                return;
+            }
+
+            const survived = result.predicted_survived === 1;
+            const pct = (result.survival_probability * 100).toFixed(1);
+            box.className = "result " + (survived ? "survived" : "died");
+            box.innerHTML = `
+                預測結果：<b>${survived ? "生還 ✅" : "未生還 ❌"}</b><br>
+                生還機率：<b>${pct}%</b>
+                <div class="bar-wrap"><div class="bar" style="width:${pct}%;"></div></div>
+            `;
+        });
+
+        // ---------- 批次預測 ----------
+        async function uploadCsv() {
+            const fileInput = document.getElementById("csvFile");
+            if (fileInput.files.length === 0) {
+                alert("請先選擇一個 CSV 檔");
+                return;
+            }
+
+            // 用 FormData 傳檔案，注意這裡不要自己設 Content-Type，瀏覽器會自動加上 boundary
+            const formData = new FormData();
+            formData.append("file", fileInput.files[0]);
+
+            document.getElementById("batchInfo").textContent = "預測中...";
+
+            const response = await fetch("/api/predict/batch", {
+                method: "POST",
+                body: formData
+            });
+            const result = await response.json();
+
+            if (!response.ok) {
+                document.getElementById("batchInfo").textContent = "";
+                alert(result.error || "批次預測失敗");
+                return;
+            }
+
+            document.getElementById("batchInfo").textContent = `共預測 ${result.count} 筆（僅顯示前 50 筆）`;
+            renderBatch(result.items.slice(0, 50));
+        }
+
+        function renderBatch(items) {
+            const container = document.getElementById("batchResult");
+            if (items.length === 0) { container.innerHTML = ""; return; }
+
+            let html = `<table><thead><tr>
+                <th>Name</th><th>Sex</th><th>Pclass</th>
+                <th>預測</th><th>生還機率</th></tr></thead><tbody>`;
+
+            for (const it of items) {
+                const survived = it.Predicted_Survived === 1;
+                const pct = (it.Survival_Probability * 100).toFixed(1);
+                html += `<tr>
+                    <td>${it.Name ?? ""}</td>
+                    <td>${it.Sex ?? ""}</td>
+                    <td>${it.Pclass ?? ""}</td>
+                    <td>${survived ? "生還" : "未生還"}</td>
+                    <td>${pct}%</td>
+                </tr>`;
+            }
+            html += "</tbody></table>";
+            container.innerHTML = html;
+        }
+    </script>
+</body>
+
+</html>
